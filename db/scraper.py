@@ -1,3 +1,5 @@
+import user
+
 from tweepy import Cursor
 from tweepy import API
 from tweepy.streaming import StreamListener
@@ -5,7 +7,7 @@ from tweepy import OAuthHandler
 from tweepy import Stream
 import pandas as pd
 
-import user
+import psycopg
 
 ### TWITTER CLIENT ###
 class TwitterClient():
@@ -118,3 +120,4 @@ if __name__ == '__main__':
     # df.to_csv(file_name,encoding='utf-8',index=False)
     twitter_streamer = TwitterStreamer()
     twitter_streamer.stream_tweets(fetched_tweets_filename, hash_tag_list)
+
