@@ -1,6 +1,5 @@
 import sqlalchemy
-import tensorflow
-import tensorflow_estimator
+import tensorflow as tf
 
 username = 'postgres'  # DB username
 password = 'COVID_type8eat'  # DB password
@@ -24,7 +23,9 @@ result_as_list = result.fetchall()
 for row in result_as_list:
     print(row)
 
-new_model = tf.keras.models.load_model('gthack_model.h5')
+model = tf.keras.models.load_model('./model/gthack_model.h5')
+predictions = model.predict(result_as_list)
+print(predictions)
 
 conn.close()
 print("Connection Closed")
