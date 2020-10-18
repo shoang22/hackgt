@@ -3,7 +3,6 @@ from nltk.tokenize import word_tokenize
 from string import punctuation
 from nltk.corpus import stopwords
 
-
 class PreProcessTweets:
     def __init__(self):
         self._stopwords = set(stopwords.words('english') + list(punctuation) + ['AT_USER', 'URL'])

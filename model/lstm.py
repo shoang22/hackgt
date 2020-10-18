@@ -71,19 +71,19 @@ txt = [cleaning(doc) for doc in nlp.pipe(brief_cleaning, batch_size=5000, n_thre
 print('Time to clean up everything: {} mins'.format(round((time() - t) / 60, 2)))
 
 from gensim.models.phrases import Phrases, Phraser
-df_clean = pd.DataFrame({'text':df['text'],'text_clean':txt,'real':df['real']})
+df_clean = pd.DataFrame({'text':df['text'],'text_clean':txt,'sentiment':df['sentiment']})
 df_clean.dropna(subset=['text_clean'],inplace=True)
 
 ## split dataset
 df_train, df_test = model_selection.train_test_split(df_clean, test_size=0.3)
 ## get target
-y_train = df_train["real"].values
-y_test = df_test["real"].values
+y_train = df_train["sentiment"].values
+y_test = df_test["sentiment"].values
 
 tweets_train = df_train['text_clean']
 tweets_test = df_test['text_clean']
 
-y = df_train['real']
+y = df_train['sentiment']
 
 # tokenize text
 max_features = 20000
