@@ -1,123 +1,143 @@
+'''
+*    Title: GraphicsDrawer source code
+*    Author: Smith, J
+*    Date: 2011
+*    Code version: 2.0
+*    Availability: http://www.graphicsdrawer.com
+'''
+
+import time
 import user
+import tweepy
+import psycopg2
 
-from tweepy import Cursor
-from tweepy import API
-from tweepy.streaming import StreamListener
-from tweepy import OAuthHandler
-from tweepy import Stream
-import pandas as pd
+auth = tweepy.OAuthHandler(user.CONSUMER_KEY, user.CONSUMER_KEY_SECRET)
+auth.set_access_token(user.ACCESS_TOKEN, user.ACCESS_TOKEN_SECRET)
+api = tweepy.API(auth)
 
-import psycopg
 
-### TWITTER CLIENT ###
-class TwitterClient():
-    def __init__(self,twitter_param=None): # twitter_user=None is to specify default argument as None
-        self.auth = TwitterAuthenticator().authenticate_twitter_app()
-        self.twitter_client = API(self.auth,wait_on_rate_limit=True,wait_on_rate_limit_notify=True)
+class MyStreamListener(tweepy.StreamListener):
 
-        # Get tweets for another user
-        self.twitter_param = twitter_param
-        # self.twitter.query = twitter_query
+    def __init__(self, time_limit=300):
+        self.start_time = time.time()
+        self.limit = time_limit
+        super(MyStreamListener, self).__init__()
 
-    def get_user_timeline_tweets(self,num_tweets):
-        tweets = []
-        for tweet in Cursor(self.twitter_client.user_timeline,id=self.twitter_param).items(num_tweets):
-            tweets.append(tweet)
-        return tweets
+    def on_connect(self):
+        print("Connected to Twitter API.")
 
-    def get_friend_list(self,num_friends):
-        friend_list = []
-        for friend in Cursor(self.twitter_client.friends).items(num_friends):
-            friend_list.append(friend)
-        return friend_list
+    def on_status(self, status):
 
-    def get_home_timeline_tweets(self,num_tweets):
-        home_timeline_tweets = []
-        for tweet in Cursor(self.twitter_client.home_timeline,id=self.twitter_param).items(num_tweets):
-            home_timeline_tweets.append(tweet)
-        return home_timeline_tweets
+        # Tweet ID
+        tweet_id = status.id
 
-    def searchTweets(self,num_tweets):
-        searched_tweets = []
-        for tweet in Cursor(self.twitter_client.search,q=self.twitter_param).items(num_tweets):
-            searched_tweets.append((tweet.created_at,tweet.id,tweet.user.name,tweet.user.screen_name,tweet.user.location,tweet.text))
-        return searched_tweets
+        # User ID
+        user_id = status.user.id
+        # Username
+        username = status.user.name
 
-    # def getStatus(self,):
+        # Tweet
+        if status.truncated == True:
+            tweet = status.extended_tweet['full_text']
+            hashtags = status.extended_tweet['entities']['hashtags']
+        else:
+            tweet = status.text
+            hashtags = status.entities['hashtags']
 
-### TWITTER AUTHENTICATOR ###
+        # Read hastags
+        hashtags = read_hashtags(hashtags)
 
-# Create class to authenticate for other purposes
+        # Retweet count
+        retweet_count = status.retweet_count
+        # Language
+        lang = status.lang
 
-class TwitterAuthenticator():
-    def authenticate_twitter_app(self):
-        auth = OAuthHandler(user.CONSUMER_KEY, user.CONSUMER_KEY_SECRET)
-        auth.set_access_token(user.ACCESS_TOKEN, user.ACCESS_TOKEN_SECRET)
-        return auth
+        # If tweet is not a retweet and tweet is in English
+        if not hasattr(status, "retweeted_status") and lang == "en":
+            # Connect to database
+            dbConnect(user_id, username, tweet_id, tweet, retweet_count, hashtags)
 
-### TWITTER STREAMER ###
-class TwitterStreamer():
-    """
-    Class for streaming and processing live tweets.
-    """
-    def __init__(self):
-        self.twitter_authenticator = TwitterAuthenticator()
-
-    def stream_tweets(self, fetched_tweets_filename, hash_tag_list):
-        # This handles Twitter authetification and the connection to Twitter Streaming API
-        listener = TwitterListener(fetched_tweets_filename)
-        auth = self.twitter_authenticator.authenticate_twitter_app()
-        stream = Stream(auth, listener)
-
-        # This line filter Twitter Streams to capture data by the keywords:
-        stream.filter(track=hash_tag_list)
-
-### TWITTER STREAM LISTENER ###
-class TwitterListener(StreamListener):
-    """
-    This is a basic listener that just prints received tweets to stdout.
-    """
-
-    def __init__(self, fetched_tweets_filename):
-        self.fetched_tweets_filename = fetched_tweets_filename
-
-    def on_data(self, data):
-        try:
-            print(data)
-            with open(self.fetched_tweets_filename, 'a') as tf:
-                tf.write(data)
-            return True
-        except BaseException as e:
-            print("Error on_data %s" % str(e))
-        return True
-
-    # Error to catch rate limit violation
-    def on_error(self, status):
-        if status == 420:
-            # return false on_data method in case tate limit occurs
+        if (time.time() - self.start_time) > self.limit:
+            print(time.time(), self.start_time, self.limit)
             return False
-        print(status)
 
+    def on_error(self, status_code):
+        if status_code == 420:
+            # Returning False in on_data disconnects the stream
+            return False
 
-if __name__ == '__main__':
-    # Authenticate using config.py and connect to Twitter Streaming API.
-    # text = 'hate_keywords.txt'
-    # with open(text, encoding='utf8') as fl:
-        # file_contents = [x.rstrip() for x in fl]
+# Extract hashtags
+def read_hashtags(tag_list):
+    hashtags = []
+    for tag in tag_list:
+        hashtags.append(tag['text'])
+    return hashtags
 
-    # query = '(covid OR rona OR virus OR kung flu OR pandemic)' \
-            #'(Sputnik-V OR Pfizer OR Modena OR AstraZeneca OR Oxford OR immunity ' \
-            #'OR vaxx OR vaccin OR trial OR CDC OR FDA OR Regeneron) lang: en'
+# commands = (# Table 1
+#             '''Create Table TwitterUser(User_Id BIGINT PRIMARY KEY, User_Name TEXT);''',
+#             # Table 2
+#             '''Create Table TwitterTweet(Tweet_Id BIGINT PRIMARY KEY,
+#                                          User_Id BIGINT,
+#                                          Tweet TEXT,
+#                                          Retweet_Count INT,
+#                                          CONSTRAINT fk_user
+#                                              FOREIGN KEY(User_Id)
+#                                                  REFERENCES TwitterUser(User_Id));''',
+#             # Table 3
+#             '''Create Table TwitterEntity(Id SERIAL PRIMARY KEY,
+#                                          Tweet_Id BIGINT,
+#                                          Hashtag TEXT,
+#                                          CONSTRAINT fk_user
+#                                              FOREIGN KEY(Tweet_Id)
+#                                                  REFERENCES TwitterTweet(Tweet_Id));''')
 
-    # Authenticate using config.py and connect to Twitter Streaming API
-    hash_tag_list = ['covid','coronavirus','pandemic','covid19','covid-19']
-    fetched_tweets_filename = "tweets.txt"
+# Connection to database server
+# need to allow ip address on GCP first - remember to convert to CIDR format with "to" address
+conn = psycopg2.connect(host="34.86.177.25", database="postgres", user='postgres', password = 'COVID_type8eat')
 
-    # items = 3
-    # file_name = 'data.csv'
-    # twitter_client = TwitterClient(query)
-    # df = pd.DataFrame(twitter_client.searchTweets(items))
-    # df.to_csv(file_name,encoding='utf-8',index=False)
-    twitter_streamer = TwitterStreamer()
-    twitter_streamer.stream_tweets(fetched_tweets_filename, hash_tag_list)
+# Create cursor to execute SQL commands
+cur = conn.cursor()
 
+# Execute SQL commands
+# for command in commands:
+#     # Create tables
+#     cur.execute(command)
+
+# Close communication with server
+conn.commit()
+cur.close()
+conn.close()
+
+# Insert Tweet data into database
+def dbConnect(user_id, user_name, tweet_id, tweet, retweet_count, hashtags):
+    # need to allow ip address first - remember to convert to CIDR format with "to" address
+    conn = psycopg2.connect(host="34.86.177.25", database="postgres", user= 'postgres', password = 'COVID_type8eat')
+
+    cur = conn.cursor()
+
+    # insert user information
+    command = '''INSERT INTO TwitterUser (user_id, user_name) VALUES (%s,%s) ON CONFLICT
+                 (User_Id) DO NOTHING;'''
+    cur.execute(command, (user_id, user_name))
+
+    # insert tweet information
+    command = '''INSERT INTO TwitterTweet (tweet_id, user_id, tweet, retweet_count) VALUES (%s,%s,%s,%s);'''
+    cur.execute(command, (tweet_id, user_id, tweet, retweet_count))
+
+    # insert entity information
+    for i in range(len(hashtags)):
+        hashtag = hashtags[i]
+        command = '''INSERT INTO TwitterEntity (tweet_id, hashtag) VALUES (%s,%s);'''
+        cur.execute(command, (tweet_id, hashtag))
+
+    # Commit changes
+    conn.commit()
+
+    # Disconnect
+    cur.close()
+    conn.close()
+
+myStreamListener = MyStreamListener()
+myStream = tweepy.Stream(auth=api.auth, listener=myStreamListener,
+                        tweet_mode="extended")
+myStream.filter(track=['covid','coronavirus','pandemic','covid19','covid-19'])
